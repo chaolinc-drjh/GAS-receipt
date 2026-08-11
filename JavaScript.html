@@ -1,0 +1,1162 @@
+<script>
+// =========================================================================
+// 1. 全域變數宣告與狀態管理 (Global Variables & State)
+// =========================================================================
+
+let currentMode = 'add'; 
+let currentReceiptNum = '';
+let userOriginalPhone = '';
+let userOriginalVoip = '';
+let isUserRegistered = false;   
+let isUserAdmin = false; 
+let isSuperAdmin = false; 
+let isSystemTabSwitch = false;  
+
+let allReceipts = [];
+const ITEMS_PER_PAGE = 8;
+
+let currentTab2Page = 1;
+let currentTab3Page = 1;
+
+let adminSearchKeyword = '';
+let adminSearchMinAmount = null;
+
+// 置頂並顯示呼吸燈的高亮領據編號清單
+let highlightedReceiptNums = []; 
+
+let currentUserName = '';
+let showOnlyMyReceipts = false;
+let currentDepositFilter = 'all'; 
+
+let pendingVoidReceiptNum = '';
+let voidModalInstance = null;
+let adminCurrentReceiptNum = '';
+let unconfirmedReceiptNums = [];
+
+
+// =========================================================================
+// 2. 帳號切換與深淺色主題 (Theme & Account Management)
+// =========================================================================
+
+/**
+ * 切換 Google 登入帳號（重定向至 Google Account Chooser）
+ */
+function switchAccount() {
+  const appUrl = "<?= ScriptApp.getService().getUrl() ?>";
+  const chooserUrl = 'https://accounts.google.com/AccountChooser?continue=' + encodeURIComponent(appUrl);
+  window.top.location.href = chooserUrl;
+}
+
+/**
+ * 初始化主題模式（預設為 light，並載入 localStorage 紀錄）
+ */
+function initTheme() {
+  const savedTheme = localStorage.getItem('appTheme') || 'light';
+  document.documentElement.setAttribute('data-bs-theme', savedTheme);
+  updateThemeIcon(savedTheme);
+}
+
+/**
+ * 切換深色 / 淺色主題模式並儲存偏好設定
+ */
+function toggleTheme() {
+  const currentTheme = document.documentElement.getAttribute('data-bs-theme');
+  const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-bs-theme', newTheme);
+  localStorage.setItem('appTheme', newTheme);
+  updateThemeIcon(newTheme);
+}
+
+/**
+ * 更新頁面上深淺色主題開關的圖示
+ * 
+ * @param {string} theme - 當前主題名稱 ('dark' | 'light')
+ */
+function updateThemeIcon(theme) {
+  const icon = document.getElementById('theme-icon');
+  if (!icon) return;
+  if (theme === 'dark') {
+    icon.className = 'bi bi-sun-fill text-warning';
+  } else {
+    icon.className = 'bi bi-moon-fill';
+  }
+}
+
+// 立即執行主題初始化
+initTheme();
+
+
+// =========================================================================
+// 3. 頁面初始化與身份驗證回调 (Initialization & Auth Callbacks)
+// =========================================================================
+
+// DOM 載入後綁定頁籤切換監聽器與觸發後端驗證
+document.addEventListener("DOMContentLoaded", function() {
+  const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+  const tooltipList = [...tooltipTriggerList].map(tooltipTriggerEl => new bootstrap.Tooltip(tooltipTriggerEl));
+
+  const formTabEl = document.getElementById('form-tab');
+  if (formTabEl) {
+    formTabEl.addEventListener('show.bs.tab', function (event) {
+      if (!isUserRegistered) {
+        event.preventDefault(); 
+        showSystemAlert('❌ 您無權限存取填寫與編輯頁面！', 'danger');
+        const queryTabEl = document.querySelector('#query-tab');
+        bootstrap.Tab.getOrCreateInstance(queryTabEl).show();
+      } else if (!isSystemTabSwitch) {
+        setFormMode('add');
+        resetForm();
+      }
+    });
+  }
+
+  // 向 GAS 後端驗證身分
+  google.script.run
+    .withSuccessHandler(onAuthSuccess)
+    .withFailureHandler(onAuthFailure)
+    .verifyUser();
+});
+
+/**
+ * 身分驗證成功 Callback
+ * 處理權限控制、畫面區塊顯示與資料預載入
+ * 
+ * @param {Object} response - 後端 verifyUser() 回傳的驗證結果與使用者資料
+ */
+/**
+ * 身分驗證成功 Callback
+ */
+function onAuthSuccess(response) {
+  document.getElementById('loading-screen').style.display = 'none';
+  
+  if (response.isValid) {
+    currentUserName = response.userInfo.name;
+
+    document.getElementById('welcome-message').innerHTML = `
+      <strong>🎉 歡迎，
+        <span id="user-name-filter" class="text-primary text-decoration-underline" style="cursor: pointer; transition: 0.2s;" title="點擊切換：僅顯示我的領據" onclick="toggleMyReceipts()">
+          ${currentUserName}
+        </span>！
+      </strong>
+      <span id="filter-status-text" class="ms-2"></span>`;
+      
+    userOriginalPhone = response.userInfo.phone;
+    userOriginalVoip = response.userInfo.voip;
+    document.getElementById('phone').value = userOriginalPhone;
+    document.getElementById('voip').value = userOriginalVoip;
+
+    isUserRegistered = response.userInfo.isRegistered; 
+    isUserAdmin = response.userInfo.isAdmin; 
+    isSuperAdmin = response.userInfo.isSuperAdmin;
+
+    // 1. 一般管理員權限 (顯示第 3 頁籤：入帳管理)
+    const adminTabItem = document.getElementById('admin-tab-item');
+    if (adminTabItem) {
+      adminTabItem.style.display = isUserAdmin ? 'block' : 'none';
+    }
+        
+    // 2. 超級管理員權限 (顯示歷史資料封存區塊)
+    const archiveSection = document.getElementById('super-admin-archive-section');
+    if (archiveSection) {
+      if (isSuperAdmin) {
+        archiveSection.classList.remove('d-none');
+        archiveSection.classList.add('d-flex');
+      } else {
+        archiveSection.classList.add('d-none');
+        archiveSection.classList.remove('d-flex');
+      }
+    }
+
+    document.getElementById('main-app').style.display = 'block';
+
+    // 3. ★ 處理無 ROLE (未註冊 / 無權限) 使用者的頁籤控制
+    const formTabItem = document.getElementById('form-tab-item');
+    
+    if (!isUserRegistered) {
+  
+      // 1. 無 ROLE / 未註冊使用者：隱藏第 1 頁籤按鈕
+      if (formTabItem) formTabItem.style.display = 'none';
+  
+      // 2. 切換並顯示第 2 頁籤 (Tab 與 Pane 會自動被 Bootstrap 啟用)
+      const queryTabBtn = document.querySelector('#query-tab');
+      const queryTab = bootstrap.Tab.getOrCreateInstance(queryTabBtn);
+      queryTab.show();
+
+      // 3. 載入唯讀領據清單
+      loadReceipts();
+  
+      showSystemAlert('ℹ️ 您的帳號為唯讀權限（無法新增或修改領據）。', 'info');
+    } else {
+      // 1. 有 ROLE 使用者：顯示第 1 頁籤按鈕
+      if (formTabItem) formTabItem.style.display = 'block';
+  
+      // 2. 啟用並顯示第 1 頁籤
+      const formTabBtn = document.querySelector('#form-tab');
+      const formTab = bootstrap.Tab.getOrCreateInstance(formTabBtn);
+      formTab.show();
+    
+      setFormMode('add'); 
+      loadReceipts();
+    }
+  }  
+}
+
+
+/**
+ * 身分驗證失敗 Callback
+ * 
+ * @param {Error} error - 連線或伺服器異常物件
+ */
+function onAuthFailure(error) {
+  document.getElementById('loading-screen').style.display = 'none';
+  alert('無法連線至伺服器。錯誤代碼：' + error.message);
+}
+
+
+// =========================================================================
+// 4. UI 過濾器與進度條切換 (Filter & UI Controllers)
+// =========================================================================
+
+/**
+ * 切換「僅顯示我的領據」與「顯示全校領據」過濾狀態
+ */
+function toggleMyReceipts() {
+  showOnlyMyReceipts = !showOnlyMyReceipts; 
+  const statusText = document.getElementById('filter-status-text');  
+
+  if (showOnlyMyReceipts) {
+    statusText.innerHTML = '<span class="badge bg-warning text-dark shadow-sm">🔍 僅顯示我的領據</span>';
+  } else {
+    statusText.innerHTML = '';
+  }  
+
+  updateDepositFilterUI();   
+
+  const queryTabEl = document.querySelector('#query-tab');
+  bootstrap.Tab.getOrCreateInstance(queryTabEl).show();  
+
+  renderProgress();
+  renderTable(1);
+}
+
+/**
+ * 點擊進度條時過濾「已入帳」與「未入帳」之單據
+ * 
+ * @param {Event} event - 點擊事件物件
+ */
+function handleProgressClick(event) {
+  let clickedType = event.target.id === 'progress-deposited-bar' ? 'deposited' : 'not_deposited';
+
+  if (currentDepositFilter === clickedType) {
+    currentDepositFilter = 'all'; 
+  } else {
+    currentDepositFilter = clickedType;
+  }
+
+  updateDepositFilterUI();
+  renderTable(1);
+}
+
+/**
+ * 更新入帳篩選狀態的 UI Badge 標籤
+ */
+function updateDepositFilterUI() {
+  const statusEl = document.getElementById('deposit-filter-status');
+  if (!statusEl) return;
+
+  let colorClass = showOnlyMyReceipts ? 'bg-primary' : 'bg-success';
+
+  if (currentDepositFilter === 'deposited') {
+    statusEl.innerHTML = `<span class="badge ${colorClass} shadow-sm">🔍 已入帳 / 部分入帳</span>`;
+  } else if (currentDepositFilter === 'not_deposited') {
+    statusEl.innerHTML = `<span class="badge bg-secondary shadow-sm">🔍 未入帳</span>`;
+  } else {
+    statusEl.innerHTML = '';
+  }
+}
+
+/**
+ * 管理員分頁的關鍵字與最小金額搜尋
+ */
+function handleAdminSearch() {
+  adminSearchKeyword = document.getElementById('adminSearchKeyword').value.trim();
+  let amt = document.getElementById('adminSearchAmount').value;
+  adminSearchMinAmount = amt ? parseInt(amt, 10) : null;
+  renderAdminTable(1);
+}
+
+/**
+ * 清除管理員搜尋條件並重置表格
+ */
+function clearAdminSearch() {
+  document.getElementById('adminSearchKeyword').value = '';
+  document.getElementById('adminSearchAmount').value = '';
+  adminSearchKeyword = '';
+  adminSearchMinAmount = null;
+  renderAdminTable(1);
+}
+
+
+// =========================================================================
+// 5. 系統提示與 Loading 載入控制器 (Alerts & Loaders)
+// =========================================================================
+
+/**
+ * 顯示頂部系統提示訊息（會於 5 秒後自動消失）
+ * 
+ * @param {string} msg - 欲顯示的訊息內容
+ * @param {string} type - Alert 類型 ('success' | 'danger' | 'warning' | 'info')
+ */
+function showSystemAlert(msg, type) {
+  const alertBox = document.getElementById('system-alert');
+  const alertMsg = document.getElementById('system-alert-message');
+  alertMsg.innerText = msg;
+  alertBox.className = `alert alert-${type} shadow-sm mb-4`;
+  alertBox.style.display = 'block';
+  alertBox.style.opacity = '1';
+  setTimeout(() => {
+    alertBox.style.opacity = '0';
+    setTimeout(() => { alertBox.style.display = 'none'; }, 500);
+  }, 5000);
+}
+
+/**
+ * 顯示全螢幕 Loading 遮罩
+ * 
+ * @param {string} text - 載入中顯示的提示文字
+ */
+function showLoader(text) {
+  document.getElementById('loader-text').innerText = text;
+  document.getElementById('full-page-loader').style.display = 'flex';
+}
+
+/**
+ * 隱藏全螢幕 Loading 遮罩
+ */
+function hideLoader() {
+  document.getElementById('full-page-loader').style.display = 'none';
+}
+
+
+// =========================================================================
+// 6. 表單模式控制與提交 (Form Management & Submit)
+// =========================================================================
+
+/**
+ * 設定表單為「新增模式」或「編輯模式」
+ * 
+ * @param {string} mode - 模式 ('add' | 'edit')
+ * @param {string} [receiptNum=''] - 編輯模式時傳入的領據編號
+ */
+function setFormMode(mode, receiptNum = '') {
+  currentMode = mode;
+  currentReceiptNum = receiptNum;
+  const badge = document.getElementById('mode-badge');
+  const numDisplay = document.getElementById('receipt-num-display');
+  const voidContainer = document.getElementById('void-container');
+  const isVoidCheck = document.getElementById('isVoid');
+
+  if (mode === 'add') {
+    badge.className = 'badge bg-primary fs-6';
+    badge.innerText = '新增模式';
+    numDisplay.innerText = '';
+    voidContainer.style.display = 'none'; 
+    isVoidCheck.checked = false;
+    document.getElementById('department').value = '雲林縣政府';
+    checkVoidStatus(); 
+  } else {
+    badge.className = 'badge bg-warning text-dark fs-6';
+    badge.innerText = '修改模式';
+    numDisplay.innerText = `領據編號：${receiptNum}`;
+    voidContainer.style.display = 'block'; 
+  }
+}
+
+/**
+ * 檢查勾選「作廢」時，控制備註欄位是否為必填
+ */
+function checkVoidStatus() {
+  const isVoid = document.getElementById('isVoid').checked;
+  const remarks = document.getElementById('remarks');
+  const label = document.getElementById('remarksLabel');
+  const helper = document.getElementById('remarksHelper');
+  if (isVoid) {
+    remarks.required = true;
+    label.innerHTML = '備註 <span class="text-danger fw-bold">*</span>';
+    helper.style.display = 'block';
+  } else {
+    remarks.required = false;
+    label.innerHTML = '備註';
+    helper.style.display = 'none';
+  }
+}
+
+/**
+ * 重置表單欄位為預設值
+ */
+function resetForm() {
+  document.getElementById('receiptForm').reset();
+  document.getElementById('phone').value = userOriginalPhone;
+  document.getElementById('voip').value = userOriginalVoip;
+  if (currentMode === 'add') {
+    document.getElementById('department').value = '雲林縣政府';
+  }
+  checkVoidStatus();
+}
+
+/**
+ * 表單提交處理（呼叫後端 submitReceipt）
+ * 
+ * @param {Event} event - 表單 Submit 事件
+ */
+function handleFormSubmit(event) {
+  event.preventDefault();
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = true;
+  btn.innerHTML = '儲存中...';
+
+  const accountType = document.querySelector('input[name="accountType"]:checked').value;
+  const data = {
+    mode: currentMode,
+    receiptNum: currentReceiptNum,
+    department: document.getElementById('department').value,
+    projectName: document.getElementById('projectName').value,
+    amount: document.getElementById('amount').value,
+    accountType: accountType,
+    phone: document.getElementById('phone').value,
+    voip: document.getElementById('voip').value,
+    isVoid: document.getElementById('isVoid').checked,
+    remarks: document.getElementById('remarks').value
+  };
+
+  google.script.run
+    .withSuccessHandler(function(response) {
+      if (response.success) {
+        userOriginalPhone = data.phone;
+        userOriginalVoip = data.voip;
+        showSystemAlert(`✅ ${response.message} (領據編號：${response.receiptNum})`, 'success');
+
+        const queryTabEl = document.querySelector('#query-tab');
+        bootstrap.Tab.getOrCreateInstance(queryTabEl).show();
+        loadReceipts(); 
+
+        setFormMode('add');
+        resetForm();
+      } else {
+        showSystemAlert(`❌ 發生錯誤：${response.message}`, 'danger');
+      }
+      btn.disabled = false;
+      btn.innerHTML = '💾 儲存領據';
+    })
+    .withFailureHandler(function(error) {
+      showSystemAlert(`❌ 網路連線錯誤，請重試！(${error.message})`, 'danger');
+      btn.disabled = false;
+      btn.innerHTML = '💾 儲存領據';
+    })
+    .submitReceipt(data);
+}
+
+
+// =========================================================================
+// 7. 資料載入與統計進度條 (Data Loading & Progress Bar)
+// =========================================================================
+
+/**
+ * 從 GAS 後端載入全校領據清單，並更新表格與進度條
+ */
+function loadReceipts() {
+  showLoader('載入領據資料中...');
+
+  document.getElementById('receipt-table-body').innerHTML = 
+    '<tr><td colspan="7" class="text-center text-muted py-4"><div class="spinner-border spinner-border-sm text-primary"></div> 資料載入中...</td></tr>';     
+
+  if (isUserAdmin) {
+    document.getElementById('admin-table-body').innerHTML = 
+      '<tr><td colspan="8" class="text-center text-muted py-4"><div class="spinner-border spinner-border-sm text-success"></div> 資料載入中...</td></tr>';
+  }
+
+  google.script.run
+    .withSuccessHandler(function(data) {
+      allReceipts = data;
+      renderProgress();
+      renderTable(currentTab2Page);
+      if (isUserAdmin) renderAdminTable(currentTab3Page);
+      checkUnconfirmedDeposits();
+      hideLoader();
+    })
+    .withFailureHandler(function(err) {
+      hideLoader();
+      document.getElementById('receipt-table-body').innerHTML = 
+        `<tr><td colspan="7" class="text-center text-danger py-4">讀取失敗：${err.message}</td></tr>`;
+    })
+    .getReceiptsList();
+}
+
+/**
+ * 計算並渲染年度經費入帳進度條（包含全校與個人）
+ */
+function renderProgress() {
+  const currentRocYear = (new Date().getFullYear() - 1911).toString();
+
+  let globalTotal = 0, globalDeposited = 0;
+  let myTotal = 0, myDeposited = 0;
+
+  allReceipts.forEach(item => {
+    if (item.receiptNum.startsWith(currentRocYear) && item.status !== '作廢') {
+      globalTotal += item.amount;
+      globalDeposited += item.depositedAmount;
+
+      if (item.creator === currentUserName) {
+        myTotal += item.amount;
+        myDeposited += item.depositedAmount;
+      }
+    }
+  });
+
+  let tab2Total = showOnlyMyReceipts ? myTotal : globalTotal;
+  let tab2Deposited = showOnlyMyReceipts ? myDeposited : globalDeposited;
+  let tab2Percentage = tab2Total === 0 ? 0 : Math.max(0, Math.min(100, (tab2Deposited / tab2Total) * 100));
+
+  document.getElementById('progress-total-amount').innerText = tab2Total.toLocaleString();
+  const bar = document.getElementById('progress-deposited-bar');
+
+  if (bar) {
+    bar.style.width = tab2Percentage + '%';
+    bar.setAttribute('aria-valuenow', tab2Percentage);
+    bar.innerText = tab2Deposited > 0 ? tab2Deposited.toLocaleString() : '';
+
+    if (showOnlyMyReceipts) {
+      bar.style.backgroundColor = '#0d6efd';
+      bar.parentElement.style.borderColor = '#0a58ca';
+    } else {
+      bar.style.backgroundColor = '#4ca140';
+      bar.parentElement.style.borderColor = '#3c8f3c';
+    }
+  }
+
+  if (isUserAdmin) {
+    let adminPercentage = globalTotal === 0 ? 0 : Math.max(0, Math.min(100, (globalDeposited / globalTotal) * 100));
+    const adminTotalEl = document.getElementById('admin-progress-total-amount');
+    const adminBar = document.getElementById('admin-progress-deposited-bar');
+
+    if (adminTotalEl && adminBar) {
+      adminTotalEl.innerText = globalTotal.toLocaleString();
+      adminBar.style.width = adminPercentage + '%';
+      adminBar.setAttribute('aria-valuenow', adminPercentage);
+      adminBar.innerText = globalDeposited > 0 ? globalDeposited.toLocaleString() : '';
+    }
+  }
+}
+
+
+// =========================================================================
+// 8. 表格渲染與分頁控制 (Table Rendering & Pagination)
+// =========================================================================
+
+/**
+ * 渲染一般使用者查詢頁籤（第 2 頁籤）的領據表格
+ * 支援置頂高亮（新入帳）、僅顯示我的領據與入帳狀態過濾
+ * 
+ * @param {number} page - 欲渲染的頁碼
+ */
+function renderTable(page) {
+  currentTab2Page = page;
+  const tbody = document.getElementById('receipt-table-body');
+  tbody.innerHTML = '';
+
+  let listToRender = showOnlyMyReceipts ? allReceipts.filter(r => r.creator === currentUserName) : allReceipts;
+
+  if (currentDepositFilter === 'deposited') {
+    listToRender = listToRender.filter(r => r.status !== '作廢' && r.depositedAmount > 0);
+  } else if (currentDepositFilter === 'not_deposited') {
+    listToRender = listToRender.filter(r => r.status !== '作廢' && r.depositedAmount === 0);
+  }
+
+  // 置頂排序邏輯：將需高亮的領據抽排至最上方
+  if (highlightedReceiptNums.length > 0) {
+    listToRender.sort((a, b) => {
+      let aIsHighlight = highlightedReceiptNums.includes(a.receiptNum);
+      let bIsHighlight = highlightedReceiptNums.includes(b.receiptNum);
+      if (aIsHighlight && !bIsHighlight) return -1;
+      if (!aIsHighlight && bIsHighlight) return 1;
+      return 0;
+    });
+  }
+
+  if (listToRender.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">尚無符合的領據資料</td></tr>';
+    document.getElementById('pagination-ul').innerHTML = '';
+    return;
+  }
+
+  const totalPages = Math.ceil(listToRender.length / ITEMS_PER_PAGE);
+  if (page < 1) page = 1;
+  if (page > totalPages) page = totalPages;
+
+  const startIndex = (page - 1) * ITEMS_PER_PAGE;
+  const pageData = listToRender.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+
+  pageData.forEach(item => {
+    let badgeColor = 'bg-secondary';
+    let displayStatus = item.status;
+
+    if (item.status === '作廢') {
+      badgeColor = 'bg-danger';
+    } else if (item.status === '未入帳') {
+      badgeColor = 'bg-secondary';
+    } else if (item.status === '已入帳') {
+      if (item.depositedAmount > 0 && item.depositedAmount < item.amount) {
+        badgeColor = 'bg-warning text-dark';
+        displayStatus = '部分入帳';
+      } else if (item.depositedAmount >= item.amount) {
+        badgeColor = 'bg-success';
+      }
+    }
+
+    let safeRemarks = item.remarks ? item.remarks.replace(/"/g, '&quot;').replace(/\n/g, '&#10;') : '無備註';
+    let actionsHtml = '';
+    let copyBtn = `<i class="bi bi-files text-primary action-btn" title="複製新增" onclick="actionCopy('${item.receiptNum}')"></i>`;
+
+    if (item.isEditable) {
+      actionsHtml += `<i class="bi bi-pencil-square text-success action-btn" title="編輯" onclick="actionEdit('${item.receiptNum}')"></i>`;
+      actionsHtml += `<i class="bi bi-printer text-body action-btn" title="列印 PDF" onclick="actionPrint('${item.receiptNum}')"></i>`;
+      if (item.status !== '作廢') {
+        actionsHtml += `<i class="bi bi-x-circle text-danger action-btn" title="直接作廢" onclick="actionVoid('${item.receiptNum}')"></i>`;
+      }
+      actionsHtml += copyBtn;
+    } else {
+      actionsHtml += `<i class="bi bi-lock-fill btn-read-only" title="僅限製表人且建檔七日內可編輯"></i>`;
+      actionsHtml += copyBtn;
+    }
+
+    // 套用高亮呼吸燈 Class 與「新入帳!」圖章
+    let isPulse = highlightedReceiptNums.includes(item.receiptNum);
+    let rowClass = isPulse ? 'class="row-highlight-pulse"' : '';
+    let newTagHtml = isPulse ? `<span class="badge bg-danger ms-1 animate__animated animate__flash infinite">新入帳!</span>` : '';
+
+    tbody.innerHTML += `
+      <tr ${rowClass}>
+        <td class="fw-bold text-nowrap">${item.receiptNum}</td>
+        <td class="text-nowrap">${item.date}</td>
+        <td class="text-wrap text-break" style="max-width: 300px;">${item.projectName}</td>
+        <td class="text-nowrap">$${item.amount.toLocaleString()}</td>
+        <td class="text-nowrap">
+          <span class="badge ${badgeColor}" title="備註：&#10;${safeRemarks}" data-bs-toggle="tooltip" style="cursor: help;">
+            ${displayStatus}
+          </span>
+          ${newTagHtml}
+        </td>
+        <td class="text-nowrap">${item.creator}</td>
+        <td class="text-center text-nowrap">${actionsHtml}</td>
+      </tr>`;
+  });
+
+  renderPagination('pagination-ul', currentTab2Page, totalPages, 'renderTable');
+}
+
+/**
+ * 渲染出納/管理員頁籤（第 3 頁籤）的經費管理表格
+ * 
+ * @param {number} page - 欲渲染的頁碼
+ */
+function renderAdminTable(page) {
+  currentTab3Page = page;
+  const tbody = document.getElementById('admin-table-body');
+  tbody.innerHTML = '';
+  let listToRender = [...allReceipts];
+
+  if (adminSearchKeyword !== '') {
+    listToRender = listToRender.filter(item => item.projectName.includes(adminSearchKeyword));
+  }
+  if (adminSearchMinAmount !== null && !isNaN(adminSearchMinAmount)) {
+    listToRender = listToRender.filter(item => item.amount >= adminSearchMinAmount);
+    listToRender.sort((a, b) => a.amount - b.amount);
+  }
+
+  if (listToRender.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">尚無符合的領據資料</td></tr>';
+    document.getElementById('admin-pagination-ul').innerHTML = '';
+    return;
+  }
+
+  const totalPages = Math.ceil(listToRender.length / ITEMS_PER_PAGE);
+  if (page < 1) page = 1;
+  if (page > totalPages) page = totalPages;
+
+  const startIndex = (page - 1) * ITEMS_PER_PAGE;
+  const pageData = listToRender.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+
+  pageData.forEach(item => {
+    let badgeColor = 'bg-secondary';
+    let displayStatus = item.status;
+
+    if (item.status === '作廢') {
+      badgeColor = 'bg-danger';
+    } else if (item.status === '未入帳') {
+      badgeColor = 'bg-secondary';
+    } else if (item.status === '已入帳') {
+      if (item.depositedAmount > 0 && item.depositedAmount < item.amount) {
+        badgeColor = 'bg-warning text-dark';
+        displayStatus = '部分入帳';
+      } else if (item.depositedAmount >= item.amount) {
+        badgeColor = 'bg-success';
+      }
+    }
+
+    let remaining = Math.max(0, item.amount - item.depositedAmount);
+    let safeRemarks = item.remarks ? item.remarks.replace(/"/g, '&quot;').replace(/\n/g, '&#10;') : '無備註';
+    let actionsHtml = '';
+
+    if (item.status === '作廢') {
+      actionsHtml = `<span class="text-muted fw-bold">已作廢</span>`;
+    } else if (item.depositedAmount >= item.amount) {
+      actionsHtml = `<span class="text-success fw-bold"><i class="bi bi-check-circle-fill"></i> 已結清</span>`;
+    } else {
+      actionsHtml = `<button class="btn btn-sm btn-outline-success fw-bold shadow-sm" onclick="actionDeposit('${item.receiptNum}')">💰 登記入帳</button>`;
+    }
+
+    tbody.innerHTML += `
+      <tr>
+        <td class="fw-bold text-nowrap">${item.receiptNum}</td>
+        <td class="text-nowrap">${item.department}</td>
+        <td class="text-wrap text-break" style="max-width: 250px;">${item.projectName}</td>
+        <td class="text-nowrap fw-bold">$${item.amount.toLocaleString()}</td>
+        <td class="text-nowrap text-success fw-bold">$${item.depositedAmount.toLocaleString()}</td>
+        <td class="text-nowrap text-danger fw-bold">$${remaining.toLocaleString()}</td>
+        <td class="text-nowrap">
+          <span class="badge ${badgeColor}" title="入帳紀錄與備註：&#10;${safeRemarks}" data-bs-toggle="tooltip" style="cursor: help;">
+            ${displayStatus}
+          </span>
+        </td>
+        <td class="text-center text-nowrap">${actionsHtml}</td>
+      </tr>`;
+  });
+
+  renderPagination('admin-pagination-ul', currentTab3Page, totalPages, 'renderAdminTable');
+}
+
+/**
+ * 通用分頁按鈕 HTML 渲染函式
+ * 
+ * @param {string} targetId - 分頁 `<ul>` 元素的 ID
+ * @param {number} currentPage - 目前所在頁碼
+ * @param {number} totalPages - 總頁數
+ * @param {string} functionName - 點擊分頁時欲呼叫的渲染函式名稱
+ */
+function renderPagination(targetId, currentPage, totalPages, functionName) {
+  const ul = document.getElementById(targetId);
+  let html = '';
+  html += `<li class="page-item ${currentPage === 1 ? 'disabled' : ''}">
+            <button class="page-link" onclick="${functionName}(${currentPage - 1})">上一頁</button>
+           </li>`;
+
+  for (let i = 1; i <= totalPages; i++) {
+    html += `<li class="page-item ${i === currentPage ? 'active' : ''}">
+              <button class="page-link" onclick="${functionName}(${i})">${i}</button>
+             </li>`;
+  }
+
+  html += `<li class="page-item ${currentPage === totalPages ? 'disabled' : ''}">
+             <button class="page-link" onclick="${functionName}(${currentPage + 1})">下一頁</button>
+           </li>`;
+  ul.innerHTML = html;
+}
+
+
+// =========================================================================
+// 9. 單據操作 (編輯、複製、作廢、入帳、列印)
+// =========================================================================
+
+/**
+ * 點擊「編輯」動作：將指定單據填入第 1 頁籤表單中
+ * 
+ * @param {string} receiptNum - 領據編號
+ */
+function actionEdit(receiptNum) {
+  const item = allReceipts.find(r => r.receiptNum === receiptNum);
+  if (!item) return;
+
+  isSystemTabSwitch = true;
+  const formTab = document.querySelector('#form-tab');
+  bootstrap.Tab.getOrCreateInstance(formTab).show();
+
+  setFormMode('edit', item.receiptNum);
+  document.getElementById('department').value = item.department;
+  document.getElementById('projectName').value = item.projectName;
+  document.getElementById('amount').value = item.amount;
+  document.getElementById('phone').value = item.phone;
+  document.getElementById('voip').value = item.voip;
+  document.getElementById('remarks').value = item.remarks.replace(/\[入帳\][\s\S]*/, '').trim();
+
+  const accRadios = document.getElementsByName('accountType');
+  accRadios.forEach(r => {
+    if (r.value === item.accountType) r.checked = true;
+  });
+
+  const isVoidCheck = document.getElementById('isVoid');
+  isVoidCheck.checked = (item.status === '作廢');
+  checkVoidStatus();
+
+  isSystemTabSwitch = false;
+}
+
+/**
+ * 點擊「複製」動作：複製現有領據內容至新表單草稿
+ * 
+ * @param {string} receiptNum - 欲複製的領據編號
+ */
+function actionCopy(receiptNum) {
+  const item = allReceipts.find(r => r.receiptNum === receiptNum);
+  if (!item) return;
+
+  if (!isUserRegistered) {
+    showSystemAlert('❌ 您沒有新增領據的權限！', 'danger');
+    return;
+  }
+
+  isSystemTabSwitch = true;
+  const formTab = document.querySelector('#form-tab');
+  bootstrap.Tab.getOrCreateInstance(formTab).show();
+
+  setFormMode('add');
+  document.getElementById('department').value = item.department;
+  document.getElementById('projectName').value = item.projectName;
+  document.getElementById('amount').value = item.amount;
+
+  const accRadios = document.getElementsByName('accountType');
+  accRadios.forEach(r => {
+    if (r.value === item.accountType) r.checked = true;
+  });
+
+  showSystemAlert('📝 已將資料複製至新領據草稿中。', 'success');
+  isSystemTabSwitch = false;
+}
+
+/**
+ * 開啟「領據作廢」確認彈窗
+ * 
+ * @param {string} receiptNum - 欲作廢的領據編號
+ */
+function actionVoid(receiptNum) {
+  pendingVoidReceiptNum = receiptNum;
+  document.getElementById('voidModalText').innerHTML = `確定要作廢領據 <strong class="text-danger">[${receiptNum}]</strong> 嗎？`;
+  document.getElementById('voidReason').value = '';
+  document.getElementById('voidReason').classList.remove('is-invalid');
+
+  if (!voidModalInstance) {
+    voidModalInstance = new bootstrap.Modal(document.getElementById('voidModal'));
+  }
+  voidModalInstance.show();
+}
+
+/**
+ * 確認進行作廢操作，並傳送至後端 voidReceiptRecord
+ */
+function confirmVoidAction() {
+  const reasonInput = document.getElementById('voidReason');
+  const remark = reasonInput.value.trim();
+
+  if (remark === '') {
+    reasonInput.classList.add('is-invalid');
+    return;
+  }
+
+  voidModalInstance.hide();
+  showLoader('作廢處理中...');
+
+  google.script.run
+    .withSuccessHandler(res => {
+      hideLoader();
+      if (res.success) {
+        showSystemAlert(`✅ 領據 ${pendingVoidReceiptNum} 已作廢！`, 'success');
+        loadReceipts();
+      } else {
+        showSystemAlert(`❌ 作廢失敗：${res.message}`, 'danger');
+      }
+    })
+    .withFailureHandler(err => {
+      hideLoader();
+      showSystemAlert(`❌ 連線錯誤：${err.message}`, 'danger');
+    })
+    .voidReceiptRecord(pendingVoidReceiptNum, remark);
+}
+
+/**
+ * 開啟「登記入帳」彈窗（出納專用）
+ * 
+ * @param {string} receiptNum - 領據編號
+ */
+function actionDeposit(receiptNum) {
+  const item = allReceipts.find(r => r.receiptNum === receiptNum);
+  if (!item) return;
+
+  adminCurrentReceiptNum = receiptNum;
+  let remaining = item.amount - item.depositedAmount;
+
+  document.getElementById('depositReceiptNum').innerText = receiptNum;
+  document.getElementById('depositRemaining').innerText = remaining.toLocaleString();
+
+  const amtInput = document.getElementById('depositAmount');
+  amtInput.max = remaining;
+  amtInput.value = remaining;
+  amtInput.classList.remove('is-invalid');
+
+  const tzoffset = (new Date()).getTimezoneOffset() * 60000;
+  const localISOTime = (new Date(Date.now() - tzoffset)).toISOString().slice(0, 10);
+  document.getElementById('depositDate').value = localISOTime;
+
+  new bootstrap.Modal(document.getElementById('depositModal')).show();
+}
+
+/**
+ * 確認登記入帳金額，並傳送至後端 addDepositRecord
+ */
+function confirmDepositAction() {
+  const amtInput = document.getElementById('depositAmount');
+  const dateInput = document.getElementById('depositDate');
+  const amount = parseInt(amtInput.value, 10);
+  const max = parseInt(amtInput.max, 10);
+
+  if (!amount || amount <= 0 || amount > max) {
+    amtInput.classList.add('is-invalid');
+    return;
+  }
+
+  amtInput.classList.remove('is-invalid');
+  bootstrap.Modal.getInstance(document.getElementById('depositModal')).hide();
+  showLoader('登記入帳處理中...');
+
+  google.script.run
+    .withSuccessHandler(res => {
+      hideLoader();
+      if (res.success) {
+        showSystemAlert(`✅ 領據 ${adminCurrentReceiptNum} 入帳成功！`, 'success');
+        loadReceipts();
+      } else {
+        showSystemAlert(`❌ 入帳失敗：${res.message}`, 'danger');
+      }
+    })
+    .withFailureHandler(err => {
+      hideLoader();
+      showSystemAlert(`❌ 連線錯誤：${err.message}`, 'danger');
+    })
+    .addDepositRecord(adminCurrentReceiptNum, dateInput.value, amount);
+}
+
+/**
+ * 請求後端產出 PDF 並自動觸發瀏覽器下載
+ * 
+ * @param {string} receiptNum - 領據編號
+ */
+function actionPrint(receiptNum) {
+  showLoader('產生 PDF 中，請稍候...');
+
+  google.script.run
+    .withSuccessHandler(res => {
+      hideLoader();
+      if (res.success) {
+        const link = document.createElement('a');
+        link.href = 'data:application/pdf;base64,' + res.base64;
+        link.download = res.fileName;
+        link.click();
+        showSystemAlert(`✅ PDF 下載成功！`, 'success');
+      } else {
+        showSystemAlert(`❌ 產生 PDF 失敗：${res.message}`, 'danger');
+      }
+    })
+    .withFailureHandler(err => {
+      hideLoader();
+      alert('列印連線錯誤：' + err.message);
+    })
+    .generatePDF(receiptNum);
+}
+
+
+// =========================================================================
+// 10. 歷史資料封存邏輯 (Archiving Operations)
+// =========================================================================
+
+/**
+ * 開啟超級管理員「歷史封存」Modal 彈窗，並自動分析可封存之進度點與未入帳金額
+ */
+function openArchiveModal() {
+  const select = document.getElementById('archiveTargetSelect');
+  select.innerHTML = '<option value="">分析資料中...</option>';
+  document.getElementById('archiveUnpaidInfo').innerHTML = '';
+
+  let ascReceipts = [...allReceipts].reverse();
+  if (ascReceipts.length === 0) {
+    select.innerHTML = '<option value="" disabled>目前無資料可封存</option>';
+    new bootstrap.Modal(document.getElementById('archiveModal')).show();
+    return;
+  }
+
+  let optionsHtml = '<option value="" data-unpaid="0">請選擇封存進度...</option>';
+  let counter = 0;
+  let currentYear = ascReceipts[0].receiptNum.substring(0, 3);
+  let cumulativeUnpaid = 0;
+
+  for (let i = 0; i < ascReceipts.length; i++) {
+    let r = ascReceipts[i];
+    let year = r.receiptNum.substring(0, 3);
+    counter++;
+
+    if (r.status !== '作廢') {
+      cumulativeUnpaid += Math.max(0, r.amount - r.depositedAmount);
+    }
+
+    let isLastOfYear = (i < ascReceipts.length - 1 && ascReceipts[i + 1].receiptNum.substring(0, 3) !== year);
+
+    if (isLastOfYear) {
+      optionsHtml += `<option value="${r.receiptNum}" data-unpaid="${cumulativeUnpaid}">📅 跨年結算：封存至 ${year} 年底 (單號 ${r.receiptNum})</option>`;
+      counter = 0;
+      currentYear = ascReceipts[i + 1].receiptNum.substring(0, 3);
+    } else if (counter === 10) {
+      optionsHtml += `<option value="${r.receiptNum}" data-unpaid="${cumulativeUnpaid}">📦 區間封存：封存至單號 ${r.receiptNum}</option>`;
+      counter = 0;
+    }
+  }
+
+  if (optionsHtml === '<option value="" data-unpaid="0">請選擇封存進度...</option>') {
+    optionsHtml = '<option value="" disabled>目前尚未累積超過 10 筆或產生跨年資料</option>';
+  }
+
+  select.innerHTML = optionsHtml;
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('archiveModal')).show();
+}
+
+/**
+ * 選擇封存目標時，即時於彈窗中更新該範圍內「未入帳款項」的警告提示
+ */
+function updateArchiveUnpaidInfo() {
+  const select = document.getElementById('archiveTargetSelect');
+  const infoDiv = document.getElementById('archiveUnpaidInfo');
+
+  if (!select.value) {
+    infoDiv.innerHTML = '';
+    return;
+  }
+
+  const selectedOption = select.options[select.selectedIndex];
+  const unpaidAmount = parseInt(selectedOption.getAttribute('data-unpaid'), 10) || 0;
+
+  if (unpaidAmount > 0) {
+    infoDiv.innerHTML = `<span class="badge bg-danger fs-6 mt-1 shadow-sm"><i class="bi bi-exclamation-triangle-fill"></i> 警告：此範圍內尚有 $${unpaidAmount.toLocaleString()} 經費未入帳！</span>`;
+  } else {
+    infoDiv.innerHTML = `<span class="badge bg-success fs-6 mt-1 shadow-sm"><i class="bi bi-check-circle-fill"></i> 安全：此範圍內的款項已全數結清</span>`;
+  }
+}
+
+/**
+ * 確認執行資料封存，呼叫後端 archiveRecords 搬移資料
+ */
+function confirmArchiveAction() {
+  const select = document.getElementById('archiveTargetSelect');
+  const targetNum = select.value;
+
+  if (!targetNum) {
+    select.classList.add('is-invalid');
+    return;
+  }
+
+  select.classList.remove('is-invalid');
+  bootstrap.Modal.getInstance(document.getElementById('archiveModal')).hide();
+  showLoader('封存搬移處理中，請勿關閉視窗...');
+
+  google.script.run
+    .withSuccessHandler(res => {
+      hideLoader();
+      if (res.success) {
+        showSystemAlert(`✅ ${res.message}`, 'success');
+        loadReceipts();
+      } else {
+        showSystemAlert(`❌ 封存失敗：${res.message}`, 'danger');
+      }
+    })
+    .withFailureHandler(err => {
+      hideLoader();
+      showSystemAlert(`❌ 網路連線錯誤：${err.message}`, 'danger');
+    })
+    .archiveRecords(targetNum);
+}
+
+
+// =========================================================================
+// 11. 未確認入帳通知彈窗與點亮置頂 (Unconfirmed Deposit Popups)
+// =========================================================================
+
+/**
+ * 檢查目前登入使用者是否有「新入帳但尚未確認」的領據，若有則顯示提醒 Modal 彈窗
+ */
+function checkUnconfirmedDeposits() {
+  unconfirmedReceiptNums = [];
+  const listHtml = [];
+
+  allReceipts.forEach(r => {
+    if (r.creator === currentUserName && r.depositedAmount > 0 && !r.creatorConfirmed) {
+      unconfirmedReceiptNums.push(r.receiptNum);
+      listHtml.push(`
+        <li class="list-group-item d-flex justify-content-between align-items-center">
+          <div>
+            <strong class="text-dark">${r.receiptNum}</strong><br>
+            <small class="text-muted">${r.projectName}</small>
+          </div>
+          <span class="badge bg-success rounded-pill fs-6">$${r.depositedAmount.toLocaleString()}</span>
+        </li>
+      `);
+    }
+  });
+
+  if (unconfirmedReceiptNums.length > 0) {
+    document.getElementById('unconfirmed-receipts-list').innerHTML = listHtml.join('');
+    const modal = new bootstrap.Modal(document.getElementById('depositNotificationModal'));
+    modal.show();
+  }
+}
+
+/**
+ * 使用者按下「我已確認以上入帳資訊」按鈕，通知後端更新狀態並將單據置頂加上呼吸燈
+ */
+function acknowledgeDeposits() {
+  const btn = document.querySelector('#depositNotificationModal .btn-success');
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> 處理中...';
+  btn.disabled = true;
+
+  google.script.run
+    .withSuccessHandler(res => {
+      const modalEl = document.getElementById('depositNotificationModal');
+      const modalInstance = bootstrap.Modal.getInstance(modalEl);
+      if (modalInstance) modalInstance.hide();
+
+      btn.innerHTML = '我已確認以上入帳資訊';
+      btn.disabled = false;
+
+      if (res.success) {
+        highlightedReceiptNums = [...unconfirmedReceiptNums];
+
+        allReceipts.forEach(r => {
+          if (unconfirmedReceiptNums.includes(r.receiptNum)) {
+            r.creatorConfirmed = 'Yes'; 
+          }
+        });
+
+        // 自動切換至第 2 頁籤 (🔍 查詢與列印)
+        const queryTabEl = document.querySelector('#query-tab');
+        bootstrap.Tab.getOrCreateInstance(queryTabEl).show();
+
+        // 重新渲染表格
+        renderTable(1);
+
+        showSystemAlert('✅ 您已成功確認入帳資訊！相關單據已為您置頂顯示。', 'success');
+      } else {
+        showSystemAlert('❌ 確認失敗：' + res.message, 'danger');
+      }
+    })
+    .withFailureHandler(err => {
+      btn.innerHTML = '我已確認以上入帳資訊';
+      btn.disabled = false;
+      showSystemAlert('❌ 網路錯誤：' + err.message, 'danger');
+    })
+    .confirmReceiptDeposit(unconfirmedReceiptNums);
+}
+</script>

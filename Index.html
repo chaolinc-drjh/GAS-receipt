@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<base target="_top">
+	<meta charset="utf-8">
+	<title>雲端領據管理系統</title>
+	<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+	<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
+  <!-- ★ 從外部檔案載入 CSS -->
+  <?!= include('Stylesheet'); ?>
+</head>
+<body>
+	<div id="loading-screen">
+		<div class="spinner-border text-primary" role="status">
+			<span class="visually-hidden">驗證中...</span>
+		</div>
+		<h5 class="mt-3 text-secondary">系統身分驗證中，請稍候...</h5>
+	</div>
+	<div id="full-page-loader">
+		<div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;"></div>
+		<h5 class="mt-3 text-primary fw-bold" id="loader-text">處理中...</h5>
+	</div>
+	<div class="container mt-5 pt-5" id="error-screen">
+		<div class="row justify-content-center">
+			<div class="col-md-8 col-lg-6">
+				<div class="alert alert-danger shadow-sm border-0" role="alert">
+					<h4 class="alert-heading fw-bold mb-3">🚫 存取被拒</h4>
+					<p id="error-domain-text">本系統僅限系統設定之網域教職員登入。</p>
+					<hr>
+					<p class="mb-4" id="error-email-text">您目前的登入信箱為：載入中...</p>
+					<div class="p-3 bg-body-tertiary rounded border border-danger border-opacity-25">
+						<p class="mb-2 text-muted small"><i class="bi bi-info-circle"></i> 若您確定擁有權限，可能是瀏覽器預設讀取到了您個人的其他 Google 帳號。<br>
+						<font color="red"><b>附註：此系統無法使用個人帳號！！！</b></font><b></b></p>
+						<div class="d-grid mt-3">
+							<button class="btn btn-outline-danger fw-bold shadow-sm" onclick="switchAccount()"><i class="bi bi-person-lines-fill"></i> 切換登入帳號</button>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+	<div class="container mt-4" id="main-app">
+		<div class="row mb-3">
+			<div class="col-12">
+				<div class="alert alert-success shadow-sm border-0 d-flex justify-content-between align-items-center" role="alert">
+					<div id="welcome-message"></div>
+					<div>
+						<span class="badge bg-success align-middle me-2">系統線上</span> <button class="btn btn-sm btn-outline-success border-0 align-middle shadow-none" onclick="toggleTheme()" title="切換深淺色主題"><i class="bi bi-moon-fill" id="theme-icon"></i></button>
+					</div>
+				</div>
+			</div>
+		</div>
+
+    
+    <!-- mainTab -->
+    <ul class="nav nav-tabs fw-bold mb-4" id="mainTab" role="tablist">
+      <li class="nav-item" id="form-tab-item" role="presentation">
+        <button class="nav-link text-primary" data-bs-target="#form-pane" data-bs-toggle="tab" id="form-tab" role="tab" type="button">📝 填寫與編輯領據</button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link text-secondary" data-bs-target="#query-pane" data-bs-toggle="tab" id="query-tab" onclick="loadReceipts()" role="tab" type="button">🔍 查詢與列印</button>
+      </li>
+      <li class="nav-item" id="admin-tab-item" role="presentation" style="display: none;">
+        <button class="nav-link text-success" data-bs-target="#admin-pane" data-bs-toggle="tab" id="admin-tab" onclick="loadReceipts()" role="tab" type="button">💰 入帳管理</button>
+      </li>
+    </ul>
+
+		<div class="alert alert-success shadow-sm mb-4" id="system-alert" role="alert" style="display: none; transition: opacity 0.5s;">
+			<span class="fw-bold" id="system-alert-message"></span>
+		</div>
+
+		<div class="tab-content" id="mainTabContent">
+	    <!-- 第1頁籤 -->
+      <div class="tab-pane fade" id="form-pane" role="tabpanel" tabindex="0">
+				<div class="card shadow-sm border-0">
+					<div class="card-body p-4">
+						<form id="receiptForm" name="receiptForm" onsubmit="handleFormSubmit(event)">
+							<div class="row mb-3 border-bottom pb-2">
+								<div class="col-12" id="form-title-container">
+									<span class="badge bg-primary fs-6" id="mode-badge">新增模式</span> <span class="fw-bold ms-2 text-primary" id="receipt-num-display"></span>
+								</div>
+							</div>
+							<div class="row mb-3">
+								<div class="col-md-4">
+									<label class="form-label text-danger fw-bold">請款單位 (茲向) *</label> <input class="form-control" id="department" required="" type="text">
+								</div>
+								<div class="col-md-8">
+									<label class="form-label text-danger fw-bold">計畫名稱 (領到) *</label> <input class="form-control" id="projectName" maxlength="62" placeholder="最多輸入 62 個字" required="" type="text">
+									<div class="form-text text-muted" style="font-size: 0.85rem;">
+										※ 字數限制：最多 62 字 (超過將無法輸入)
+									</div>
+								</div>
+							</div>
+							<div class="row mb-3">
+								<div class="col-md-4">
+									<label class="form-label text-danger fw-bold">金額 (新台幣) *</label> <input class="form-control" id="amount" max="99999999" min="1" oninput="if(this.value.length &gt; 8) this.value = this.value.slice(0, 8);" required="" type="number">
+									<div class="form-text text-muted" style="font-size: 0.85rem;">
+										※ 最高金額限制：8 位數
+									</div>
+								</div>
+								<div class="col-md-4">
+									<label class="form-label text-danger fw-bold">連絡電話 *</label> <input class="form-control" id="phone" maxlength="20" placeholder="變更將同步更新個人資料" required="" type="text">
+								</div>
+								<div class="col-md-4">
+									<label class="form-label">網路電話</label> <input class="form-control" id="voip" maxlength="20" placeholder="變更將同步更新個人資料" type="text">
+								</div>
+							</div>
+							<div class="row mb-4">
+								<div class="col-md-4">
+									<label class="form-label">匯入帳號</label>
+									<div class="p-2 border rounded bg-body-tertiary">
+										<div class="form-check mb-2">
+											<input checked class="form-check-input" id="acc1" name="accountType" type="radio" value="保管金專戶"> <label class="form-check-label" for="acc1">保管金專戶</label>
+										</div>
+										<div class="form-check mb-2">
+											<input class="form-check-input" id="acc2" name="accountType" type="radio" value="午餐專戶"> <label class="form-check-label" for="acc2">午餐專戶</label>
+										</div>
+										<div class="form-check">
+											<input class="form-check-input" id="acc3" name="accountType" type="radio" value="教育儲蓄戶"> <label class="form-check-label" for="acc3">教育儲蓄戶</label>
+										</div>
+									</div>
+								</div>
+								<div class="col-md-4">
+									<label class="form-label" id="remarksLabel">備註</label> 
+									<textarea class="form-control" id="remarks" rows="3"></textarea>
+									<div class="form-text text-danger" id="remarksHelper" style="display: none;">
+										「作廢」狀態必須填寫備註原因。
+									</div>
+								</div>
+								<div class="col-md-4" id="void-container" style="display: none;">
+									<label class="form-label text-danger">狀態設定</label>
+									<div class="form-check mt-2">
+										<input class="form-check-input border-danger" id="isVoid" onchange="checkVoidStatus()" style="transform: scale(1.2);" type="checkbox"> <label class="form-check-label text-danger fw-bold ms-1" for="isVoid">將此領據作廢</label>
+									</div>
+								</div>
+							</div>
+							<div class="d-flex justify-content-end border-top pt-3">
+								<button class="btn btn-secondary me-2" onclick="resetForm()" type="button">清除重填</button> <button class="btn btn-primary px-4 fw-bold" id="submitBtn" type="submit">💾 儲存領據</button>
+							</div>
+						</form>
+					</div>
+				</div>
+			</div>
+      
+      <!-- 第 2 頁籤：查詢與列印頁籤 -->
+			<div class="tab-pane fade" id="query-pane" role="tabpanel" tabindex="0">
+				<div class="card shadow-sm border-0">
+					<div class="card-body p-4">
+						<div class="mb-4">
+							<div class="d-flex justify-content-between align-items-end mb-1 px-1">
+								<div>
+									<span class="text-secondary fw-bold">經費入帳進度</span> <span class="ms-2" id="deposit-filter-status"></span>
+								</div><span class="fw-bold text-dark fs-5" id="progress-total-amount">0</span>
+							</div>
+							<div class="progress shadow-sm" onclick="handleProgressClick(event)" style="height: 28px; border: 2px solid #3c8f3c; background-color: var(--bs-secondary-bg); border-radius: 4px; cursor: pointer;" title="點擊實心：顯示已入帳 / 點擊空心：顯示未入帳 (再次點擊可取消)">
+								<div aria-valuemax="100" aria-valuemin="0" aria-valuenow="0" class="progress-bar progress-text-nowrap fw-bold text-dark" id="progress-deposited-bar" role="progressbar" style="background-color: #4ca140; width: 0%; font-size: 1.05rem; cursor: pointer;">
+									0
+								</div>
+							</div>
+						</div>
+						<h5 class="fw-bold mb-3">📄 領據資料列表</h5>
+						<div class="table-responsive">
+							<table class="table table-hover align-middle border">
+								<thead class="table-secondary">
+									<tr>
+										<th class="text-nowrap">領據編號</th>
+										<th class="text-nowrap">建檔日期</th>
+										<th style="min-width: 180px; max-width: 300px;">計畫名稱</th>
+										<th class="text-nowrap">金額</th>
+										<th class="text-nowrap">狀態</th>
+										<th class="text-nowrap">製表人</th>
+										<th class="text-center text-nowrap">操作</th>
+									</tr>
+								</thead>
+								<tbody id="receipt-table-body">
+									<tr>
+										<td class="text-center text-muted py-4" colspan="7">資料載入中...</td>
+									</tr>
+								</tbody>
+							</table>
+						</div>
+						<nav aria-label="Page navigation" class="mt-3">
+							<ul class="pagination justify-content-center mb-0" id="pagination-ul"></ul>
+						</nav>
+					</div>
+				</div>
+			</div>
+      
+      <!-- 第 3 頁籤：經費入帳管理與查詢 -->
+      <div class="tab-pane fade" id="admin-pane" role="tabpanel" tabindex="0">
+				<div class="card shadow-sm border-0 border-success">
+					<div class="card-body p-4">
+						<div class="mb-4">
+							<div class="d-flex justify-content-between align-items-end mb-1 px-1">
+								<span class="text-secondary fw-bold">經費入帳進度</span> <span class="fw-bold text-dark fs-5" id="admin-progress-total-amount">0</span>
+							</div>
+							<div class="progress shadow-sm" style="height: 28px; border: 2px solid #3c8f3c; background-color: var(--bs-secondary-bg); border-radius: 4px;">
+								<div aria-valuemax="100" aria-valuemin="0" aria-valuenow="0" class="progress-bar progress-text-nowrap fw-bold text-dark" id="admin-progress-deposited-bar" role="progressbar" style="background-color: #4ca140; width: 0%; font-size: 1.05rem;">
+									0
+								</div>
+							</div>
+						</div>
+						<h5 class="fw-bold mb-3 text-success">💰 經費入帳管理與查詢</h5>
+						<div class="row mb-3">
+							<div class="col-md-6 mb-2">
+								<div class="input-group shadow-sm">
+									<span class="input-group-text bg-success text-white border-success"><i class="bi bi-search"></i> 關鍵字</span> <input class="form-control border-success" id="adminSearchKeyword" oninput="handleAdminSearch()" placeholder="搜尋計畫名稱..." type="text">
+								</div>
+							</div>
+							<div class="col-md-6 mb-2">
+								<div class="input-group shadow-sm">
+									<span class="input-group-text bg-success text-white border-success"><i class="bi bi-currency-dollar"></i> 金額篩選</span> <input class="form-control border-success" id="adminSearchAmount" oninput="handleAdminSearch()" placeholder="輸入下限金額 (將由小到大排序)" type="number"> <button class="btn btn-outline-success" onclick="clearAdminSearch()" type="button">清除</button>
+								</div>
+							</div>
+						</div>
+
+						<div class="alert alert-dark justify-content-between align-items-center shadow-sm mb-4 d-none" id="super-admin-archive-section">
+              <div>
+                <h6 class="fw-bold mb-1 text-dark"><i class="bi bi-archive-fill"></i> 歷史資料封存區 (僅超級管理員可見)</h6>
+                <small class="text-secondary">將結清的舊單據搬移至「封存」資料表，維持系統順暢。</small>
+              </div>
+              <button class="btn btn-dark fw-bold px-3" onclick="openArchiveModal()">進行封存作業</button>
+            </div>
+            
+						<div class="table-responsive">
+							<table class="table table-hover align-middle border">
+								<thead class="table-secondary">
+									<tr>
+										<th class="text-nowrap">領據編號</th>
+										<th class="text-nowrap">請款單位</th>
+										<th style="min-width: 150px; max-width: 250px;">計畫名稱</th>
+										<th class="text-nowrap">總金額</th>
+										<th class="text-nowrap text-success">已入帳</th>
+										<th class="text-nowrap text-danger">待入帳</th>
+										<th class="text-nowrap">狀態</th>
+										<th class="text-center text-nowrap">操作</th>
+									</tr>
+								</thead>
+								<tbody id="admin-table-body">
+									<tr>
+										<td class="text-center text-muted py-4" colspan="8">資料載入中...</td>
+									</tr>
+								</tbody>
+							</table>
+						</div>
+						<nav aria-label="Page navigation" class="mt-3">
+							<ul class="pagination justify-content-center mb-0" id="admin-pagination-ul"></ul>
+						</nav>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div><!-- 彈出式視窗：作廢 -->
+	<div aria-hidden="true" class="modal fade" id="voidModal" tabindex="-1">
+		<div class="modal-dialog modal-dialog-centered">
+			<div class="modal-content">
+				<div class="modal-header bg-danger text-white border-0">
+					<h5 class="modal-title fw-bold">⚠️ 確認作廢領據</h5><button aria-label="Close" class="btn-close btn-close-white" data-bs-dismiss="modal" type="button"></button>
+				</div>
+				<div class="modal-body p-4">
+					<p class="mb-3 fs-5" id="voidModalText">確定要作廢領據嗎？</p>
+					<div>
+						<label class="form-label text-danger fw-bold" for="voidReason">請輸入作廢原因 (必填)：</label> <input class="form-control" id="voidReason" placeholder="例如：金額填寫錯誤、計畫取消..." type="text">
+						<div class="invalid-feedback">
+							作廢原因不能為空！
+						</div>
+					</div>
+				</div>
+				<div class="modal-footer border-0 bg-light">
+					<button class="btn btn-secondary" data-bs-dismiss="modal" type="button">取消</button> <button class="btn btn-danger fw-bold px-4" onclick="confirmVoidAction()" type="button">確定作廢</button>
+				</div>
+			</div>
+		</div>
+	</div><!-- 彈出式視窗：💰 登記經費入帳 -->
+	<div aria-hidden="true" class="modal fade" id="depositModal" tabindex="-1">
+		<div class="modal-dialog modal-dialog-centered">
+			<div class="modal-content">
+				<div class="modal-header bg-success text-white border-0">
+					<h5 class="modal-title fw-bold">💰 登記經費入帳</h5><button aria-label="Close" class="btn-close btn-close-white" data-bs-dismiss="modal" type="button"></button>
+				</div>
+				<div class="modal-body p-4">
+					<p class="mb-3 fs-5">領據編號：<strong class="text-success" id="depositReceiptNum"></strong></p>
+					<div class="mb-3">
+						<label class="form-label fw-bold">入帳日期 (預設為今日)</label> <input class="form-control" id="depositDate" required="" type="date">
+					</div>
+					<div class="mb-3">
+						<label class="form-label fw-bold">入帳金額</label>
+						<div class="input-group">
+							<span class="input-group-text">$</span> <input class="form-control" id="depositAmount" min="1" required="" type="number">
+						</div>
+						<div class="form-text text-muted mt-2">
+							剩餘待入帳：<strong class="text-danger" id="depositRemaining"></strong> 元
+						</div>
+					</div>
+				</div>
+				<div class="modal-footer border-0 bg-light">
+					<button class="btn btn-secondary" data-bs-dismiss="modal" type="button">取消</button> <button class="btn btn-success fw-bold px-4" onclick="confirmDepositAction()" type="button">確認登記</button>
+				</div>
+			</div>
+		</div>
+	</div><!-- 彈出式視窗：封存設定 -->
+	<div aria-hidden="true" class="modal fade" id="archiveModal" tabindex="-1">
+		<div class="modal-dialog modal-dialog-centered">
+			<div class="modal-content">
+				<div class="modal-header bg-dark text-white border-0">
+					<h5 class="modal-title fw-bold"><i class="bi bi-archive-fill"></i> 選擇封存範圍</h5><button aria-label="Close" class="btn-close btn-close-white" data-bs-dismiss="modal" type="button"></button>
+				</div>
+				<div class="modal-body p-4">
+					<p class="mb-3">系統已自動為您整理出可封存的「跨年」與「每10筆」節點：</p>
+					<div class="mb-3">
+						<label class="form-label fw-bold text-danger">請選擇要封存到哪一筆？</label> <select class="form-select border-dark" id="archiveTargetSelect" onchange="updateArchiveUnpaidInfo()">
+						</select>
+						<div class="mt-2" id="archiveUnpaidInfo"></div>
+						<div class="form-text mt-2 text-muted">
+							※ 執行後，該筆(含)以前的最舊資料將移至「封存」表。
+						</div>
+					</div>
+				</div>
+				<div class="modal-footer border-0 bg-light">
+					<button class="btn btn-secondary" data-bs-dismiss="modal" type="button">取消</button> <button class="btn btn-dark fw-bold px-4" onclick="confirmArchiveAction()" type="button">確定封存</button>
+				</div>
+			</div>
+		</div>
+	</div><!-- 彈出式視窗：款項入帳強制確認視窗 -->
+	<div class="modal fade" data-bs-backdrop="static" data-bs-keyboard="false" id="depositNotificationModal" tabindex="-1">
+		<div class="modal-dialog modal-dialog-centered">
+			<div class="modal-content border-success">
+				<div class="modal-header bg-success text-white border-0">
+					<h5 class="modal-title fw-bold"><i class="bi bi-bell-fill"></i> 款項入帳通知</h5>
+				</div>
+				<div class="modal-body p-4">
+					<p class="mb-3 fw-bold text-dark">您好，您的以下領據已有經費入帳：</p>
+					<ul class="list-group mb-4 shadow-sm" id="unconfirmed-receipts-list"></ul>
+					<p class="text-danger small mb-0"><i class="bi bi-exclamation-circle"></i> 請確認以上款項，點擊下方按鈕後本訊息才不會再次顯示。</p>
+				</div>
+				<div class="modal-footer border-0 bg-light">
+					<button class="btn btn-success fw-bold w-100 py-2 shadow-sm" onclick="acknowledgeDeposits()" type="button">我已確認以上入帳資訊</button>
+				</div>
+			</div>
+		</div>
+	</div>
+	<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js">
+	</script> 
+
+  <!-- ★ 從外部檔案載入 JavaScript -->
+  <?!= include('JavaScript'); ?>
+
+</body>
+</html>

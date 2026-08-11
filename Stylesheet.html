@@ -1,0 +1,143 @@
+<style>
+/* =========================================================================
+   1. 全域與主題基礎設定 (Global & Base Theme Styles)
+   ========================================================================= */
+
+body { 
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+  transition: background-color 0.3s, color 0.3s; 
+}
+
+/* 淺色模式背景 */
+[data-bs-theme="light"] body { 
+  background-color: #f4f6f9; 
+}
+
+
+/* =========================================================================
+   2. 載入遮罩動畫 (Loading & Full Page Loader)
+   ========================================================================= */
+
+#loading-screen, 
+#full-page-loader {
+  position: fixed; 
+  top: 0; 
+  left: 0; 
+  width: 100%; 
+  height: 100vh;
+  background: rgba(255, 255, 255, 0.9); /* 淺色模式載入背景 */
+  display: flex; 
+  flex-direction: column; 
+  justify-content: center; 
+  align-items: center;
+  z-index: 9999;
+  transition: background-color 0.3s;
+}
+
+#full-page-loader { 
+  display: none; 
+  background: rgba(255, 255, 255, 0.7); 
+}
+
+/* 深色模式載入遮罩背景 */
+[data-bs-theme="dark"] #loading-screen { 
+  background: rgba(33, 37, 41, 0.95); 
+}
+
+[data-bs-theme="dark"] #full-page-loader { 
+  background: rgba(33, 37, 41, 0.85); 
+}
+
+
+/* =========================================================================
+   3. 元件與通用類別 (Components & Utilities)
+   ========================================================================= */
+
+#main-app, 
+#error-screen { 
+  display: none; 
+}
+
+/* 表格動作按鈕與 Hover 效果 */
+.action-btn { 
+  cursor: pointer; 
+  font-size: 1.1rem; 
+  margin: 0 4px; 
+  transition: 0.2s; 
+}
+
+.action-btn:hover { 
+  opacity: 0.7; 
+  transform: scale(1.1); 
+}
+
+/* 唯讀模式按鈕禁用樣式 */
+.btn-read-only { 
+  color: #6c757d; 
+  cursor: not-allowed; 
+}
+
+/* 進度條文字過長時防止折行 */
+.progress-text-nowrap { 
+  white-space: nowrap; 
+  overflow: hidden; 
+  padding: 0 5px; 
+}
+
+
+/* =========================================================================
+   4. 新入帳高亮與呼吸燈動畫 (Pulse Highlight Animation)
+   ========================================================================= */
+
+/* 淺色模式：呼吸燈動畫定義 (警告黃 <-> 入帳綠) */
+@keyframes superDepositPulse {
+  0% {
+    background-color: rgba(255, 243, 205, 1) !important; /* 明亮警告黃 */
+    box-shadow: inset 0 0 12px rgba(255, 193, 7, 0.8), 0 0 10px rgba(255, 193, 7, 0.5);
+  }
+  50% {
+    background-color: rgba(209, 231, 221, 0.9) !important; /* 柔和入帳綠 */
+    box-shadow: inset 0 0 4px rgba(25, 135, 84, 0.3), 0 0 2px rgba(25, 135, 84, 0.2);
+  }
+  100% {
+    background-color: rgba(255, 243, 205, 1) !important; /* 回到黃色 */
+    box-shadow: inset 0 0 12px rgba(255, 193, 7, 0.8), 0 0 10px rgba(255, 193, 7, 0.5);
+  }
+}
+
+/* 深色模式：呼吸燈動畫定義 */
+[data-bs-theme="dark"] @keyframes superDepositPulse {
+  0% {
+    background-color: rgba(102, 77, 3, 0.8) !important;
+    box-shadow: inset 0 0 12px rgba(255, 193, 7, 0.6);
+  }
+  50% {
+    background-color: rgba(15, 81, 50, 0.8) !important;
+    box-shadow: inset 0 0 4px rgba(25, 135, 84, 0.3);
+  }
+  100% {
+    background-color: rgba(102, 77, 3, 0.8) !important;
+    box-shadow: inset 0 0 12px rgba(255, 193, 7, 0.6);
+  }
+}
+
+/* 表格列呼吸燈套用樣式 */
+.row-highlight-pulse {
+  animation: superDepositPulse 1.8s infinite ease-in-out !important;
+  position: relative;
+  z-index: 10;
+}
+
+/* 儲存格背景透明與邊框外發光調整 */
+.row-highlight-pulse td {
+  background-color: transparent !important; /* 確保儲存格背景不遮蓋動畫 */
+  border-top: 2px solid #ffc107 !important;
+  border-bottom: 2px solid #ffc107 !important;
+  font-weight: 600;
+}
+
+/* 第一個儲存格加入超粗綠色醒目標示條 */
+.row-highlight-pulse td:first-child {
+  border-left: 6px solid #198754 !important;
+}
+</style>
