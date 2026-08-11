@@ -793,7 +793,7 @@ function convertToChineseAmount(num) {
  * ★ 用來將其他 HTML 檔案(如 JS 或 CSS) 引入到主網頁的函式
  */
 function include(filename) {
-  return HtmlService.createHtmlOutputFromFile(filename).getContent();
+  return HtmlService.createTemplateFromFile(filename).evaluate().getContent();
 }
 
 /**
