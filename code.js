@@ -98,7 +98,7 @@ function getUserInfo(email) {
         name: data[i][1] ? data[i][1].toString().trim() : id,
         phone: data[i][2] ? data[i][2].toString().trim() : '',
         voip: data[i][3] ? data[i][3].toString().trim() : '',
-        isRegistered: true,
+        isRegistered: (role !== ''),
         isAdmin: isAdmin,
         isSuperAdmin: isSuperAdmin
       };
