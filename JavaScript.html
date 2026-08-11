@@ -218,7 +218,13 @@ function onAuthSuccess(response) {
       setFormMode('add'); 
       loadReceipts();
     }
-  }  
+  } else {
+    document.getElementById('error-screen').style.display = 'block';
+    document.getElementById('error-email-text').innerText = '您目前的登入信箱為：' + (response.email || '未知');
+    if (response.allowedDomains && response.allowedDomains.length > 0) {
+      document.getElementById('error-domain-text').innerText = '本系統僅限以下網域登入：' + response.allowedDomains.join(', ');
+    }
+  }
 }
 
 
