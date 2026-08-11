@@ -130,6 +130,26 @@ function onAuthSuccess(response) {
   document.getElementById('loading-screen').style.display = 'none';
   
   if (response.isValid) {
+    window.appConfig = response.appConfig; // 儲存全域設定
+    
+    // 動態生成匯入帳號選項
+    const accountContainer = document.getElementById('account-radios-container');
+    if (accountContainer && window.appConfig && window.appConfig.accounts.length > 0) {
+      let html = '';
+      window.appConfig.accounts.forEach((acc, idx) => {
+        let checked = (idx === 0) ? 'checked' : '';
+        html += `
+          <div class="form-check ${idx < window.appConfig.accounts.length - 1 ? 'mb-2' : ''}">
+            <input ${checked} class="form-check-input" id="acc${idx}" name="accountType" type="radio" value="${acc.name}">
+            <label class="form-check-label" for="acc${idx}">${acc.name}</label>
+          </div>
+        `;
+      });
+      accountContainer.innerHTML = html;
+    } else if (accountContainer) {
+      accountContainer.innerHTML = '<span class="text-danger small">尚未設定任何帳戶</span>';
+    }
+
     currentUserName = response.userInfo.name;
 
     document.getElementById('welcome-message').innerHTML = `
@@ -362,7 +382,7 @@ function setFormMode(mode, receiptNum = '') {
     numDisplay.innerText = '';
     voidContainer.style.display = 'none'; 
     isVoidCheck.checked = false;
-    document.getElementById('department').value = '雲林縣政府';
+    document.getElementById('department').value = (window.appConfig && window.appConfig.defaultDept) ? window.appConfig.defaultDept : '';
     checkVoidStatus(); 
   } else {
     badge.className = 'badge bg-warning text-dark fs-6';
@@ -399,7 +419,7 @@ function resetForm() {
   document.getElementById('phone').value = userOriginalPhone;
   document.getElementById('voip').value = userOriginalVoip;
   if (currentMode === 'add') {
-    document.getElementById('department').value = '雲林縣政府';
+    document.getElementById('department').value = (window.appConfig && window.appConfig.defaultDept) ? window.appConfig.defaultDept : '';
   }
   checkVoidStatus();
 }

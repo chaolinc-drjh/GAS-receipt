@@ -10,7 +10,15 @@
  * @returns {HtmlService.HtmlOutput} 渲染後的 HTML 頁面物件
  */
 function doGet(e) {
-  const IMAGEID = "1DExNWkliQNVaANWYDFJ7pkDfNeqYb5WP";
+  let IMAGEID = "1DExNWkliQNVaANWYDFJ7pkDfNeqYb5WP";
+  try {
+    const configSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('CONFIG');
+    if (configSheet) {
+      const val = configSheet.getRange('D2').getValue().toString().trim();
+      if (val) IMAGEID = val;
+    }
+  } catch (err) {}
+  
   return HtmlService.createTemplateFromFile('Index')
     .evaluate()
     .setTitle('雲端領據管理系統')
@@ -55,8 +63,30 @@ function verifyUser() {
       if (isValid) userInfo = getUserInfo(email);
     }
     
-    // 將 allowedDomains 傳回前端，以便顯示在錯誤訊息中
-    return { email: email, isValid: isValid, userInfo: userInfo, allowedDomains: allowedDomains };
+    // 動態讀取前端所需的設定變數 (請款單位、匯入帳號等)
+    let appConfig = {
+      defaultDept: '雲林縣政府',
+      accounts: []
+    };
+    
+    if (isValid) {
+      const configSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('CONFIG');
+      if (configSheet) {
+        const deptVal = configSheet.getRange('E2').getValue().toString().trim();
+        if (deptVal) appConfig.defaultDept = deptVal;
+        
+        const accNames = configSheet.getRange('F2:F10').getValues();
+        const accNums = configSheet.getRange('G2:G10').getValues();
+        for (let i = 0; i < accNames.length; i++) {
+          let n = accNames[i][0].toString().trim();
+          let m = accNums[i][0].toString().trim();
+          if (n) appConfig.accounts.push({ name: n, num: m });
+        }
+      }
+    }
+
+    // 將 allowedDomains 與 appConfig 傳回前端
+    return { email: email, isValid: isValid, userInfo: userInfo, allowedDomains: allowedDomains, appConfig: appConfig };
   } catch (error) {
     return { email: '未知', isValid: false, userInfo: {}, error: error.toString() };
   }
@@ -217,9 +247,17 @@ function submitReceipt(data) {
     if (!sheet) throw new Error("找不到名為「領據紀錄」的工作表。");
 
     let accountNum = '';
-    if (data.accountType === '保管金專戶') accountNum = '147038094677';
-    else if (data.accountType === '午餐專戶') accountNum = '147038094693';
-    else if (data.accountType === '教育儲蓄戶') accountNum = '147038094806';
+    const configSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('CONFIG');
+    if (configSheet) {
+      const accNames = configSheet.getRange('F2:F10').getValues();
+      const accNums = configSheet.getRange('G2:G10').getValues();
+      for (let i = 0; i < accNames.length; i++) {
+        if (accNames[i][0].toString().trim() === data.accountType) {
+          accountNum = accNums[i][0].toString().trim();
+          break;
+        }
+      }
+    }
 
     const amountZh = convertToChineseAmount(data.amount);
 
@@ -414,7 +452,12 @@ function addDepositRecord(receiptNum, depositDate, depositAmountStr) {
       // 群組信箱寄信
       try {
         const aliases = GmailApp.getAliases();
-        const targetAlias = "noreply@drjh.ylc.edu.tw"; // 請換成您設定好的真實信箱
+        let targetAlias = "noreply@drjh.ylc.edu.tw"; // fallback
+        const configSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('CONFIG');
+        if (configSheet) {
+          const val = configSheet.getRange('C2').getValue().toString().trim();
+          if (val) targetAlias = val;
+        }
         
         if (aliases.includes(targetAlias)) {
           GmailApp.sendEmail(creatorEmail, emailSubject, "", {
