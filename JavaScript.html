@@ -615,18 +615,22 @@ function renderTable(page) {
 
     let safeRemarks = item.remarks ? item.remarks.replace(/"/g, '&quot;').replace(/\n/g, '&#10;') : '無備註';
     let actionsHtml = '';
-    let copyBtn = `<i class="bi bi-files text-primary action-btn" title="複製新增" onclick="actionCopy('${item.receiptNum}')"></i>`;
 
-    if (item.isEditable) {
-      actionsHtml += `<i class="bi bi-pencil-square text-success action-btn" title="編輯" onclick="actionEdit('${item.receiptNum}')"></i>`;
-      actionsHtml += `<i class="bi bi-printer text-body action-btn" title="列印 PDF" onclick="actionPrint('${item.receiptNum}')"></i>`;
-      if (item.status !== '作廢') {
-        actionsHtml += `<i class="bi bi-x-circle text-danger action-btn" title="直接作廢" onclick="actionVoid('${item.receiptNum}')"></i>`;
-      }
-      actionsHtml += copyBtn;
+    if (!isUserRegistered) {
+      actionsHtml = `<i class="bi bi-lock-fill btn-read-only" title="無權限操作"></i>`;
     } else {
-      actionsHtml += `<i class="bi bi-lock-fill btn-read-only" title="僅限製表人且建檔七日內可編輯"></i>`;
-      actionsHtml += copyBtn;
+      let copyBtn = `<i class="bi bi-files text-primary action-btn" title="複製新增" onclick="actionCopy('${item.receiptNum}')"></i>`;
+      if (item.isEditable) {
+        actionsHtml += `<i class="bi bi-pencil-square text-success action-btn" title="編輯" onclick="actionEdit('${item.receiptNum}')"></i>`;
+        actionsHtml += `<i class="bi bi-printer text-body action-btn" title="列印 PDF" onclick="actionPrint('${item.receiptNum}')"></i>`;
+        if (item.status !== '作廢') {
+          actionsHtml += `<i class="bi bi-x-circle text-danger action-btn" title="直接作廢" onclick="actionVoid('${item.receiptNum}')"></i>`;
+        }
+        actionsHtml += copyBtn;
+      } else {
+        actionsHtml += `<i class="bi bi-lock-fill btn-read-only" title="僅限製表人且建檔七日內可編輯"></i>`;
+        actionsHtml += copyBtn;
+      }
     }
 
     // 套用高亮呼吸燈 Class 與「新入帳!」圖章
