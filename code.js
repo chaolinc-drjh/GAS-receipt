@@ -51,9 +51,13 @@ function verifyUser() {
       const configSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('CONFIG');
       if (configSheet) {
         const domainValues = configSheet.getRange('A2:A5').getValues();
-        // 轉換為一維陣列，濾除空白，並統一轉為小寫
+        // 轉換為一維陣列，濾除空白、統一轉為小寫，並移除可能帶有的 '@' 符號
         allowedDomains = domainValues
-          .map(row => row[0].toString().trim().toLowerCase())
+          .map(row => {
+            let d = row[0].toString().trim().toLowerCase();
+            if (d.startsWith('@')) d = d.substring(1);
+            return d;
+          })
           .filter(d => d !== '');
       }
 
