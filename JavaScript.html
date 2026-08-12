@@ -27,6 +27,7 @@ let highlightedReceiptNums = [];
 let currentUserName = '';
 let showOnlyMyReceipts = false;
 let currentDepositFilter = 'all'; 
+let adminCurrentDepositFilter = 'all';
 
 let pendingVoidReceiptNum = '';
 let voidModalInstance = null;
@@ -295,6 +296,40 @@ function updateDepositFilterUI() {
   if (currentDepositFilter === 'deposited') {
     statusEl.innerHTML = `<span class="badge ${colorClass} shadow-sm">🔍 已入帳 / 部分入帳</span>`;
   } else if (currentDepositFilter === 'not_deposited') {
+    statusEl.innerHTML = `<span class="badge bg-secondary shadow-sm">🔍 未入帳</span>`;
+  } else {
+    statusEl.innerHTML = '';
+  }
+}
+
+/**
+ * 管理員點擊進度條時過濾「已入帳」與「未入帳」之單據
+ * 
+ * @param {Event} event - 點擊事件物件
+ */
+function handleAdminProgressClick(event) {
+  let clickedType = event.target.id === 'admin-progress-deposited-bar' ? 'deposited' : 'not_deposited';
+
+  if (adminCurrentDepositFilter === clickedType) {
+    adminCurrentDepositFilter = 'all'; 
+  } else {
+    adminCurrentDepositFilter = clickedType;
+  }
+
+  updateAdminDepositFilterUI();
+  renderAdminTable(1);
+}
+
+/**
+ * 更新管理員入帳篩選狀態的 UI Badge 標籤
+ */
+function updateAdminDepositFilterUI() {
+  const statusEl = document.getElementById('admin-deposit-filter-status');
+  if (!statusEl) return;
+
+  if (adminCurrentDepositFilter === 'deposited') {
+    statusEl.innerHTML = `<span class="badge bg-success shadow-sm">🔍 已入帳 / 部分入帳</span>`;
+  } else if (adminCurrentDepositFilter === 'not_deposited') {
     statusEl.innerHTML = `<span class="badge bg-secondary shadow-sm">🔍 未入帳</span>`;
   } else {
     statusEl.innerHTML = '';
@@ -701,6 +736,12 @@ function renderAdminTable(page) {
   if (adminSearchMinAmount !== null && !isNaN(adminSearchMinAmount)) {
     listToRender = listToRender.filter(item => item.amount >= adminSearchMinAmount);
     listToRender.sort((a, b) => a.amount - b.amount);
+  }
+
+  if (adminCurrentDepositFilter === 'deposited') {
+    listToRender = listToRender.filter(r => r.status !== '作廢' && r.depositedAmount > 0);
+  } else if (adminCurrentDepositFilter === 'not_deposited') {
+    listToRender = listToRender.filter(r => r.status !== '作廢' && r.depositedAmount === 0);
   }
 
   if (listToRender.length === 0) {
