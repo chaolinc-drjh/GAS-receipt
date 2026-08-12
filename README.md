@@ -39,13 +39,13 @@
 
 ### 第二步：設定 CONFIG 工作表
 請在 `CONFIG` 工作表依照以下位置填寫貴單位的專屬資料：
-*   **A2:A5**：允許登入的 Google Workspace 網域 (例如 `@xxjh.ylc.edu.tw`)。
+*   **A2:A5**：允許登入的 Google Workspace 網域 (例如 `@abjh.ylc.edu.tw`)。
 *   **B2**：Google Docs 列印範本的檔案 ID (Template ID)。
-*   **C2**：自動發送信件的寄件者 Alias (例如 `noreply@yourdomain.edu.tw`)。
+*   **C2**：自動發送信件的寄件者 Alias (例如 `noreply@abjh.ylc.edu.tw`)。
 *   **D2**：系統網頁的 Favicon 圖片 ID (Google Drive Image ID)。
 *   **E2**：預設的「請款單位」名稱 (例如 `雲林縣政府`)。
 *   **F2:F8**：支援的匯入專戶名稱 (例如 `保管金專戶`, `午餐專戶`)。
-*   **G2:G8**：與 F 欄對應的實體銀行帳號。
+*   **G2:G8**：與 F 欄對應的實體銀行帳號 (例如 `１４０９４６８８７０３８`, `１４０９４６８８７０８９`)。
 
 ### 第三步：部署程式碼 (Google Apps Script)
 1. 點擊試算表選單的 **擴充功能 > Apps Script**。
